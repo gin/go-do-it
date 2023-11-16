@@ -15,3 +15,7 @@ Cargo.lock
 
 # fe output
 output/
+
+# For testing
+.env
+.alias

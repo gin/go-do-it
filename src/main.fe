@@ -1,15 +1,52 @@
-// Import `get_42` from the utils module and rename it to `get_42_util`.
-use utils::get_42 as get_42_util
+// events
+struct ArbiterChanged {
+    #indexed
+    pub new_arbiter: address
+}
 
-contract Main {
-    pub fn get_42(self) -> u256 {
-        return get_42_util()
+contract GoDoIt {
+    // states
+    committer: address
+    witnesses: Map<address, bool>
+    arbiter: address
+    commit_amount: u256
+    commit_end_time: u256
+    ended: bool
+
+    // constructor
+    pub fn __init__(mut self, ctx: Context, commit_time: u256, commit_amount: u256) {
+        self.arbiter = ctx.msg_sender()
+        self.commit_amount = commit_amount
+        self.commit_end_time = ctx.block_timestamp() + commit_time
+        // self.ended = true    // todo: Does this save gas?
     }
+
+    pub fn change_arbiter(mut self, mut ctx: Context, new_arbiter: address) {
+        // assert new_arbiter != 0x0000000000000000000000000000000000000000
+        self.arbiter = new_arbiter
+
+        ctx.emit(ArbiterChanged(new_arbiter: new_arbiter))
+    }
+
+    // view functions
+    pub fn check_arbiter(self) -> address {
+        return self.arbiter
+    }
+
 }
 
-#test
-fn test_main(mut ctx: Context) {
-    // Create a new `Main` contract via `ctx` and test that `get_42` return 42.
-    let main: Main = Main.create(ctx, 0)
-    assert main.get_42() == 42
-}
+// #test
+// fn test_arbiter_is_init_to_deployer(mut ctx: Context) {
+//     // Create a new `GoDoIt` contract via `ctx` and test that arbiter is initialized to deployer.
+//     let c: GoDoIt = GoDoIt.create(ctx, 0)
+//     // assert c.check_arbiter() == ctx.msg_sender()
+//     // assert c.check_arbiter() == self.msg_sender()
+// }
+
+// #test
+// fn test_arbiter_can_change(mut ctx: Context) {
+//     // Create a new `GoDoIt` contract via `ctx` and test that arbiters can be changed.
+//     let mut c: GoDoIt = GoDoIt.create(ctx, 0)
+//     c.change_arbiter(ctx, new_arbiter: 0x0000000000000000000000000000000000000000)
+//     assert c.check_arbiter() == 0x0000000000000000000000000000000000000000
+// }
