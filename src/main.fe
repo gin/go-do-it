@@ -1,36 +1,117 @@
-// events
+const ZERO_ADDRESS: address = 0x0000000000000000000000000000000000000000
+
+// Debug with .emit() and `fe test --logs`
+struct DebugLog {
+    pub my_value: u256
+}
+
+struct DebugAddress {
+    #indexed
+    pub my_value: address
+}
+
+// Events
 struct ArbiterChanged {
     #indexed
     pub new_arbiter: address
 }
 
+struct WitnessAdded {
+    #indexed
+    pub witness: address
+}
+
 contract GoDoIt {
-    // states
+    // States
     committer: address
-    witnesses: Map<address, bool>
+    witnesses: Map<address, bool>   // true == witness vote to reject commiter to withdraw
+    num_witnesses: u256
     arbiter: address
     commit_amount: u256
     commit_end_time: u256
     ended: bool
+    has_withdrawn: bool
 
-    // constructor
+    // Constructor
     pub fn __init__(mut self, ctx: Context, commit_time: u256, commit_amount: u256) {
         self.arbiter = ctx.msg_sender()
         self.commit_amount = commit_amount
         self.commit_end_time = ctx.block_timestamp() + commit_time
-        // self.ended = true    // todo: Does this save gas?
+
+        // todo: Would these increase gas?
+        // self.num_witnesses = 0
+        // self.ended = false
+        // self.withdrawn = false
     }
 
     pub fn change_arbiter(mut self, mut ctx: Context, new_arbiter: address) {
-        // assert new_arbiter != 0x0000000000000000000000000000000000000000
+        // Arbiter defaults to deployer, to decide if commiter can withdraw when votes are evenly split.
+        // But maybe this role is not needed. (by round down to allow withdraw when votes are evenly split)
+        assert new_arbiter != ZERO_ADDRESS
         self.arbiter = new_arbiter
 
         ctx.emit(ArbiterChanged(new_arbiter: new_arbiter))
     }
 
-    // view functions
+    pub fn add_witness(mut self, mut ctx: Context, witness: address) {
+        assert witness != ZERO_ADDRESS
+        assert witness != self.arbiter
+        self.witnesses[witness] = false // Default to not reject
+
+        ctx.emit(WitnessAdded(witness: witness))
+    }
+
+    pub fn count_witnesses(self) -> u256 {
+        return self.witnesses
+    }
+
+    pub fn count_witnesses_reject(self) -> u256 {
+        let mut count: u256 = 0
+        for witness in self.witnesses {
+            if witnesses[witness] == false {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    pub fn is_majority_reject(self) -> bool {
+        let mut count: u256 = 0
+        for witness in self.witnesses {
+            if witnesses[witness] == false {
+                count += 1
+            }
+        }
+        return count > self.witnesses.len() / 2
+    }
+
+    pub fn can_withdraw(self) -> bool {
+        if self.ended {
+            if is_majority_reject == false {
+                return true
+            }
+        }
+        return false
+    }
+
+    pub fn withdraw(mut self, mut ctx: Context) {
+        assert self.has_withdrawn == false
+        assert self.can_withdraw()
+        // ctx.transfer(self.committer, self.commit_amount)
+
+        self.has_withdrawn = true   // Reentrancy guard
+        ctx.send_value(to: ctx.msg_sender(), wei: commit_amount)
+        commit_amount = 0
+
+    }
+
+    // View functions
     pub fn check_arbiter(self) -> address {
         return self.arbiter
+    }
+
+    pub fn check_witness_vote(self, witness: address) -> address {
+        return self.witnesses[witness]
     }
 
 }
@@ -39,14 +120,28 @@ contract GoDoIt {
 // fn test_arbiter_is_init_to_deployer(mut ctx: Context) {
 //     // Create a new `GoDoIt` contract via `ctx` and test that arbiter is initialized to deployer.
 //     let c: GoDoIt = GoDoIt.create(ctx, 0)
+//     // ctx.emit(Debug(my_value: c.check_arbiter()))
+//     // ctx.emit(Debug(my_value: ZERO_ADDRESS))
+//     // let mut arbiter: address = c.arbiter
+//     // ctx.emit(Debug(my_value: arbiter))
 //     // assert c.check_arbiter() == ctx.msg_sender()
 //     // assert c.check_arbiter() == self.msg_sender()
+//     // c.check_arbiter()
+//     // assert ctx.msg_sender() == ZERO_ADDRESS 
+//     assert c.arbiter == ZERO_ADDRESS 
 // }
 
 // #test
 // fn test_arbiter_can_change(mut ctx: Context) {
 //     // Create a new `GoDoIt` contract via `ctx` and test that arbiters can be changed.
 //     let mut c: GoDoIt = GoDoIt.create(ctx, 0)
-//     c.change_arbiter(ctx, new_arbiter: 0x0000000000000000000000000000000000000000)
-//     assert c.check_arbiter() == 0x0000000000000000000000000000000000000000
+//     // c.change_arbiter(ctx, new_arbiter: ZERO_ADDRESS)
+//     // let s: address = c.check_arbiter()
+//     // assert c.check_arbiter() == ZERO_ADDRESS
+//     // ctx.emit(Debug(my_value: ZERO_ADDRESS))
+//     let mut a: address = c.check_arbiter()
+//     ctx.emit(Debug(my_value: address(a)))
+//     assert true
 // }
+
+// There might be a bug in assignment within #test attribute?
