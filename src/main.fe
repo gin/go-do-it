@@ -21,27 +21,51 @@ struct WitnessAdded {
     pub witness: address
 }
 
+// Go Do It: a commitment device to help you achieve your goals
+// ============================================================================
+//
+// Commiter deploy contract
+//
+// Only commiter can add addresses of witnesses
+//     to prevent random people voting to reject withdraw
+//
+// Commiter can withdraw if majority of witnesses don't reject
+//
+// Witnesses who vote to reject has to stake more than commiter's stake
+//     to discourage collusion to burn commiter's stake
+//
+// If witnesses who reject are minority, their stakes are burned
+
 contract GoDoIt {
     // States
     committer: address
-    witnesses: Map<address, bool>   // true == witness vote to reject commiter to withdraw
-    num_witnesses: u256
-    arbiter: address
     commit_amount: u256
-    commit_end_time: u256
-    ended: bool
+    commit_time: u256
+    commit_end_time: u256   // ctx.blocktime_timestamp() + commit_time
+    has_ended: bool
     has_withdrawn: bool
 
+    // witnesses: Map<witness_address, [amount_staked, vote_to_reject, is_not_witness]>
+    // (vote_to_reject: 1 means reject, 0 means not reject)
+    witnesses: Map<address, Array<u256, 3>> 
+    num_witnesses: i256
+    num_witnesses_reject: i256
+
+    arbiter: address
+
     // Constructor
-    pub fn __init__(mut self, ctx: Context, commit_time: u256, commit_amount: u256) {
+    pub fn __init__(mut self, ctx: Context, commit_time: u256) {
         self.arbiter = ctx.msg_sender()
-        self.commit_amount = commit_amount
+        self.committer = ctx.msg_sender()
+        self.commit_amount = ctx.msg_value()
+        self.commit_time = commit_time
         self.commit_end_time = ctx.block_timestamp() + commit_time
 
         // todo: Would these increase gas?
+        // self.has_ended = false
+        // self.has_withdrawn = false
         // self.num_witnesses = 0
-        // self.ended = false
-        // self.withdrawn = false
+        // self.num_witnesses_reject = 0
     }
 
     pub fn change_arbiter(mut self, mut ctx: Context, new_arbiter: address) {
@@ -54,55 +78,35 @@ contract GoDoIt {
     }
 
     pub fn add_witness(mut self, mut ctx: Context, witness: address) {
+        // Only commiter can add who can be witnesses
+        // to avoid random people joining to vote reject.
         assert witness != ZERO_ADDRESS
         assert witness != self.arbiter
-        self.witnesses[witness] = false // Default to not reject
+        self.witnesses[witness] = [0, 0, 0]
 
+        self.num_witnesses += 1
         ctx.emit(WitnessAdded(witness: witness))
     }
 
-    pub fn count_witnesses(self) -> u256 {
-        return self.witnesses
-    }
+    pub fn vote_reject(mut self, mut ctx: Context) {
+        // This function is the only function that witnesses have to care about.
+        // Call when commiter is unable to achieve goal.
+        assert self.witnesses[ctx.msg_sender()][2] == 0, "Must be a witness"
 
-    pub fn count_witnesses_reject(self) -> u256 {
-        let mut count: u256 = 0
-        for witness in self.witnesses {
-            if witnesses[witness] == false {
-                count += 1
-            }
-        }
-        return count
-    }
-
-    pub fn is_majority_reject(self) -> bool {
-        let mut count: u256 = 0
-        for witness in self.witnesses {
-            if witnesses[witness] == false {
-                count += 1
-            }
-        }
-        return count > self.witnesses.len() / 2
-    }
-
-    pub fn can_withdraw(self) -> bool {
-        if self.ended {
-            if is_majority_reject == false {
-                return true
-            }
-        }
-        return false
+        self.witnesses[ctx.msg_sender()][0] = ctx.msg_value()  // Amount staked
+        self.witnesses[ctx.msg_sender()][1] = 1                // Reject
+        self.num_witnesses_reject += 1
     }
 
     pub fn withdraw(mut self, mut ctx: Context) {
         assert self.has_withdrawn == false
         assert self.can_withdraw()
-        // ctx.transfer(self.committer, self.commit_amount)
 
         self.has_withdrawn = true   // Reentrancy guard
-        ctx.send_value(to: ctx.msg_sender(), wei: commit_amount)
-        commit_amount = 0
+        ctx.send_value(to: ctx.msg_sender(), wei: self.commit_amount)
+        self.commit_amount = 0
 
+        // self.return_stakes(ctx)  // todo: Return stake to witnesses
     }
 
     // View functions
@@ -110,10 +114,54 @@ contract GoDoIt {
         return self.arbiter
     }
 
-    pub fn check_witness_vote(self, witness: address) -> address {
-        return self.witnesses[witness]
+    pub fn check_num_witnesses(self) -> i256 {
+        return self.num_witnesses
     }
 
+    pub fn check_num_witnesses_reject(self) -> i256 {
+        return self.num_witnesses_reject
+    }
+
+    pub fn check_witness_stake(self, witness: address) -> u256 {
+        // Amount staked by witness
+        return self.witnesses[witness][0]
+    }
+
+    pub fn check_witness_vote(self, witness: address) -> u256 {
+        // 1 means reject, 0 means not reject
+        return self.witnesses[witness][1]
+    }
+
+    pub fn check_witness_status(self, witness: address) -> u256 {
+        // 1 means not a witness anymore, 0 means is a witness
+        return self.witnesses[witness][2]
+    }
+
+    pub fn is_majority_reject(self) -> bool {
+        return self.num_witnesses_reject > self.num_witnesses / 2
+    }
+
+    pub fn can_withdraw(self) -> bool {
+        if self.has_ended {
+            // self.is_majority_reject = self.is_majority_reject()
+            if self.is_majority_reject() == false {
+                return true
+            }
+        }
+        return false
+    }
+
+    pub fn check_commit_amount(self) -> u256 {
+        return self.commit_amount
+    }
+
+    pub fn check_commit_time(self) -> u256 {
+        return self.commit_time
+    }
+
+    pub fn check_commit_end_time(self) -> u256 {
+        return self.commit_end_time
+    }   
 }
 
 // #test
@@ -144,4 +192,6 @@ contract GoDoIt {
 //     assert true
 // }
 
-// There might be a bug in assignment within #test attribute?
+// Question: There might be a bug in assignment within #test attribute?
+// Answer:   From Discord, testing library currently in development.
+//           It is good for testing libraries for now.
